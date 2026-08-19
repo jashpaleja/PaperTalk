@@ -2,7 +2,7 @@ name: Fetch and Notify
 
 on:
   schedule:
-    - cron: "0 13 * * *" 
+    - cron: "0 09 * * *" 
   workflow_dispatch: 
 
 # ADDED: This grants the GitHub Action permission to push files to the repo

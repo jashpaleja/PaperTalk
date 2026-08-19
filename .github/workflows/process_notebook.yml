@@ -9,7 +9,7 @@ on:
     # to give yourself enough time to click the button on your phone.
     # Currently set to: "0 1 * * *" -> 01:00 (1:00 AM) UTC every day.
     # -------------------------------------------------------------------
-    - cron: "0 1 * * *" 
+    - cron: "0 13,19,1 * * *" 
   workflow_dispatch: 
 
 jobs:
