@@ -11,25 +11,31 @@ CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 bot = telebot.TeleBot(BOT_TOKEN)
 
 async def build_podcast(paper):
-    bot.send_message(CHAT_ID, "Approval received! Generating podcast in NotebookLM...")
+    bot.send_message(CHAT_ID, "Approval received! Sending to NotebookLM...")
     try:
-        # Use the native Python API instead of terminal commands
         async with await NotebookLMClient.from_storage() as client:
             print("Creating Notebook...")
             nb = await client.notebooks.create(f"AI Paper: {paper.title}")
             
             print("Uploading PDF to NotebookLM...")
-            # We append .pdf to the ArXiv URL so Google's servers fetch it natively!
-            # Example: https://arxiv.org/pdf/1234.56789v1.pdf
             await client.sources.add_url(nb.id, f"{paper.pdf_url}.pdf", wait=True)
             
-            print("Generating Podcast (this takes a few minutes)...")
-            status = await client.artifacts.generate_audio(nb.id)
+            print("Triggering Podcast Generation...")
+            # We trigger the audio generation, but we DO NOT wait for it.
+            await client.artifacts.generate_audio(nb.id)
             
-            # Wait for Google to finish generating the audio
-            await client.artifacts.wait_for_completion(nb.id, status.task_id)
+            # Construct the direct URL to your new notebook
+            notebook_url = f"https://notebooklm.google.com/notebook/{nb.id}"
             
-            bot.send_message(CHAT_ID, f"✅ Podcast successfully generated for: {paper.title}")
+            message = (
+                f"✅ **Podcast Generation Started!**\n\n"
+                f"**Paper:** {paper.title}\n\n"
+                f"Google is building the audio in the background. It will be ready in about 10-15 minutes.\n\n"
+                f"[Click here to listen on NotebookLM]({notebook_url})"
+            )
+            
+            # Send the instant link and shut down!
+            bot.send_message(CHAT_ID, message, parse_mode="Markdown")
             
     except Exception as e:
         bot.send_message(CHAT_ID, f"❌ NotebookLM Error: {str(e)}")
