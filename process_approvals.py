@@ -46,11 +46,20 @@ def process_queue():
         paper = next(client.results(search))
         
         try:
+            # NEW: Download the PDF locally to the GitHub server first
+            print("Downloading PDF from ArXiv...")
+            paper.download_pdf(filename="paper.pdf")
+            
             # 1. Create a new notebook
+            print("Creating Notebook...")
             subprocess.run(["notebooklm", "create", f"AI Paper: {paper.title}"], check=True)
-            # 2. Upload the ArXiv PDF
-            subprocess.run(["notebooklm", "source", "add", paper.pdf_url], check=True)
+            
+            # 2. Upload the local physical file instead of the URL
+            print("Uploading PDF to NotebookLM...")
+            subprocess.run(["notebooklm", "source", "add", "paper.pdf"], check=True)
+            
             # 3. Generate the audio podcast and wait for it to finish
+            print("Generating Podcast (this takes a few minutes)...")
             subprocess.run(["notebooklm", "generate", "audio", "--wait"], check=True)
             
             bot.send_message(CHAT_ID, f"✅ Podcast successfully generated for: {paper.title}")
