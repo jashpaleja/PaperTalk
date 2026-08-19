@@ -29,9 +29,11 @@ jobs:
           python -m playwright install chromium
           
       - name: Restore NotebookLM Session
+        env:
+          SESSION_JSON: ${{ secrets.NOTEBOOKLM_SESSION }}
         run: |
           mkdir -p ~/.notebooklm
-          echo "${{ secrets.NOTEBOOKLM_SESSION }}" > ~/.notebooklm/session.json
+          echo "$SESSION_JSON" > ~/.notebooklm/storage_state.json
           
       - env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
