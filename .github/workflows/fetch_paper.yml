@@ -2,17 +2,12 @@ name: Fetch and Notify
 
 on:
   schedule:
-    # -------------------------------------------------------------------
-    # CHANGE FREQUENCY HERE
-    # This uses standard CRON syntax. Times are in UTC.
-    # Currently set to: "0 13 * * *" -> 13:00 (1:00 PM) UTC every day.
-    # To change it, modify the five values (Minute, Hour, Day, Month, Day-of-Week).
-    # Examples:
-    # "30 14 * * *" = 2:30 PM UTC every day
-    # "0 9 * * 1-5" = 9:00 AM UTC Monday through Friday
-    # -------------------------------------------------------------------
     - cron: "0 13 * * *" 
-  workflow_dispatch: # Keeps the manual run button enabled in GitHub UI
+  workflow_dispatch: 
+
+# ADDED: This grants the GitHub Action permission to push files to the repo
+permissions:
+  contents: write
 
 jobs:
   run-fetch:
@@ -23,7 +18,17 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install arxiv pyTelegramBotAPI
+      
       - env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python fetch_and_notify.py
+        
+      # ADDED: This commits the updated sent_papers.txt file back to the repo
+      - name: Save sent papers state
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add sent_papers.txt
+          git commit -m "Update sent papers list" || echo "No new papers sent today"
+          git push || echo "Nothing to push"
