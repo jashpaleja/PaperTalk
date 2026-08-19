@@ -2,6 +2,7 @@ import os
 import arxiv
 import subprocess
 import telebot
+import urllib.request
 
 # Pull secrets from GitHub Actions environment variables
 BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
@@ -46,9 +47,9 @@ def process_queue():
         paper = next(client.results(search))
         
         try:
-            # NEW: Download the PDF locally to the GitHub server first
+            # Download the PDF using Python's built-in library instead of the arxiv library
             print("Downloading PDF from ArXiv...")
-            paper.download_pdf(filename="paper.pdf")
+            urllib.request.urlretrieve(paper.pdf_url, "paper.pdf")
             
             # 1. Create a new notebook
             print("Creating Notebook...")
