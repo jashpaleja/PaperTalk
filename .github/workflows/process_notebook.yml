@@ -1,0 +1,39 @@
+
+name: Process NotebookLM Approvals
+
+on:
+  schedule:
+    # -------------------------------------------------------------------
+    # CHANGE FREQUENCY HERE
+    # Ensure this time is set several hours AFTER the fetch script runs 
+    # to give yourself enough time to click the button on your phone.
+    # Currently set to: "0 1 * * *" -> 01:00 (1:00 AM) UTC every day.
+    # -------------------------------------------------------------------
+    - cron: "0 1 * * *" 
+  workflow_dispatch: 
+
+jobs:
+  run-processing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          
+      - name: Install dependencies
+        run: |
+          pip install arxiv pyTelegramBotAPI
+          pip install "notebooklm-py[browser]"
+          playwright install chromium
+          
+      - name: Restore NotebookLM Session
+        run: |
+          mkdir -p ~/.notebooklm
+          echo "${{ secrets.NOTEBOOKLM_SESSION }}" > ~/.notebooklm/session.json
+          
+      - env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python process_approvals.py

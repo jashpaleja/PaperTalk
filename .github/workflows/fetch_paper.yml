@@ -1,0 +1,29 @@
+name: Fetch and Notify
+
+on:
+  schedule:
+    # -------------------------------------------------------------------
+    # CHANGE FREQUENCY HERE
+    # This uses standard CRON syntax. Times are in UTC.
+    # Currently set to: "0 13 * * *" -> 13:00 (1:00 PM) UTC every day.
+    # To change it, modify the five values (Minute, Hour, Day, Month, Day-of-Week).
+    # Examples:
+    # "30 14 * * *" = 2:30 PM UTC every day
+    # "0 9 * * 1-5" = 9:00 AM UTC Monday through Friday
+    # -------------------------------------------------------------------
+    - cron: "0 13 * * *" 
+  workflow_dispatch: # Keeps the manual run button enabled in GitHub UI
+
+jobs:
+  run-fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install arxiv pyTelegramBotAPI
+      - env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python fetch_and_notify.py
