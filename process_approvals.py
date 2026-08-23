@@ -1,14 +1,19 @@
 import os
 import arxiv
+import requests
 import telebot
 import asyncio
 from notebooklm import NotebookLMClient
 
-# Pull secrets from GitHub Actions environment variables
 BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 bot = telebot.TeleBot(BOT_TOKEN)
+
+class Paper:
+    def __init__(self, title, pdf_url):
+        self.title = title
+        self.pdf_url = pdf_url
 
 async def build_podcast(paper):
     bot.send_message(CHAT_ID, "Approval received! Sending to NotebookLM...")
@@ -18,13 +23,13 @@ async def build_podcast(paper):
             nb = await client.notebooks.create(f"AI Paper: {paper.title}")
             
             print("Uploading PDF to NotebookLM...")
-            await client.sources.add_url(nb.id, f"{paper.pdf_url}.pdf", wait=True)
+            # Ensure the URL explicitly ends with .pdf for NotebookLM
+            final_url = paper.pdf_url if paper.pdf_url.endswith('.pdf') else f"{paper.pdf_url}.pdf"
+            await client.sources.add_url(nb.id, final_url, wait=True)
             
             print("Triggering Podcast Generation...")
-            # We trigger the audio generation, but we DO NOT wait for it.
             await client.artifacts.generate_audio(nb.id)
             
-            # Construct the direct URL to your new notebook
             notebook_url = f"https://notebooklm.google.com/notebook/{nb.id}"
             
             message = (
@@ -34,47 +39,64 @@ async def build_podcast(paper):
                 f"[Click here to listen on NotebookLM]({notebook_url})"
             )
             
-            # Send the instant link and shut down!
             bot.send_message(CHAT_ID, message, parse_mode="Markdown")
             
     except Exception as e:
         bot.send_message(CHAT_ID, f"❌ NotebookLM Error: {str(e)}")
 
 def process_queue():
-    print("Checking Telegram's 24-hour queue for button clicks...")
+    print("Checking Telegram's queue...")
     updates = bot.get_updates()
     
     if not updates:
-        print("No buttons clicked since the last run. Exiting.")
+        print("No buttons clicked. Exiting.")
         return
         
     last_update_id = 0
     approved_paper_id = None
+    source = None
     
     for update in updates:
         last_update_id = update.update_id
         if update.callback_query:
             data = update.callback_query.data
-            if data.startswith("approve_"):
-                approved_paper_id = data.replace("approve_", "")
+            
+            if data.startswith("approve_ss_"):
+                source = "ss"
+                approved_paper_id = data.replace("approve_ss_", "")
+            elif data.startswith("approve_arxiv_"):
+                source = "arxiv"
+                approved_paper_id = data.replace("approve_arxiv_", "")
             elif data.startswith("reject_"):
-                approved_paper_id = None 
+                approved_paper_id = None
+                source = None
 
-    if approved_paper_id:
-        print(f"Approval found for ArXiv ID: {approved_paper_id}")
-        client = arxiv.Client()
-        search = arxiv.Search(id_list=[approved_paper_id])
-        paper = next(client.results(search))
+    if approved_paper_id and source:
+        print(f"Approval found. Source: {source}, ID: {approved_paper_id}")
         
-        # Run the robust async Python process
-        asyncio.run(build_podcast(paper))
+        paper_obj = None
+        
+        # Route to the correct API based on the button prefix
+        if source == "ss":
+            api_url = f"https://api.semanticscholar.org/graph/v1/paper/{approved_paper_id}"
+            response = requests.get(api_url, params={"fields": "title,openAccessPdf"})
+            data = response.json()
+            paper_obj = Paper(title=data['title'], pdf_url=data['openAccessPdf']['url'])
+            
+        elif source == "arxiv":
+            client = arxiv.Client()
+            search = arxiv.Search(id_list=[approved_paper_id])
+            paper_data = next(client.results(search))
+            paper_obj = Paper(title=paper_data.title, pdf_url=paper_data.pdf_url)
+            
+        if paper_obj:
+            asyncio.run(build_podcast(paper_obj))
             
     else:
         bot.send_message(CHAT_ID, "Paper was rejected or ignored today. Skipping.")
         
-    # Clear the queue so we don't process it again
     bot.get_updates(offset=last_update_id + 1)
-    print("Telegram queue cleared. Shutting down!")
-    
+    print("Queue cleared. Shutting down!")
+
 if __name__ == "__main__":
     process_queue()
