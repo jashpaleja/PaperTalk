@@ -25,6 +25,7 @@ Before pushing this code to GitHub, you need to gather three secret keys:
 1. **TELEGRAM_BOT_TOKEN:** Create a new bot via [@BotFather](https://t.me/botfather) on Telegram.
 2. **TELEGRAM_CHAT_ID:** Your personal (or group) Chat ID where the bot will send messages.
 3. **NOTEBOOKLM_SESSION:** A `storage_state.json` file containing your Google authentication cookies.
+4. **SEMANTIC_SCHOLAR_API_KEY:** Fill up [this](https://www.semanticscholar.org/product/api#api-key-form) form and you shall receive a api key in a few minutes.
 
 ## ⚙️ Setup Instructions
 

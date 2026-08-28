@@ -16,14 +16,14 @@ class Paper:
         self.pdf_url = pdf_url
 
 async def build_podcast(paper):
-    bot.send_message(CHAT_ID, "Approval received! Sending to NotebookLM...")
+    bot.send_message(CHAT_ID, f"Approval received! Sending '{paper.title}' to NotebookLM...")
     try:
         async with await NotebookLMClient.from_storage() as client:
             print("Creating Notebook...")
             nb = await client.notebooks.create(f"AI Paper: {paper.title}")
             
             print("Uploading PDF to NotebookLM...")
-            # Ensure the URL explicitly ends with .pdf for NotebookLM
+            # NotebookLM expects a URL ending in .pdf
             final_url = paper.pdf_url if paper.pdf_url.endswith('.pdf') else f"{paper.pdf_url}.pdf"
             await client.sources.add_url(nb.id, final_url, wait=True)
             
@@ -31,14 +31,12 @@ async def build_podcast(paper):
             await client.artifacts.generate_audio(nb.id)
             
             notebook_url = f"https://notebooklm.google.com/notebook/{nb.id}"
-            
             message = (
                 f"✅ **Podcast Generation Started!**\n\n"
                 f"**Paper:** {paper.title}\n\n"
                 f"Google is building the audio in the background. It will be ready in about 10-15 minutes.\n\n"
                 f"[Click here to listen on NotebookLM]({notebook_url})"
             )
-            
             bot.send_message(CHAT_ID, message, parse_mode="Markdown")
             
     except Exception as e:
@@ -60,10 +58,12 @@ def process_queue():
         last_update_id = update.update_id
         if update.callback_query:
             data = update.callback_query.data
-            
             if data.startswith("approve_ss_"):
                 source = "ss"
                 approved_paper_id = data.replace("approve_ss_", "")
+            elif data.startswith("approve_openalex_"):
+                source = "openalex"
+                approved_paper_id = data.replace("approve_openalex_", "")
             elif data.startswith("approve_arxiv_"):
                 source = "arxiv"
                 approved_paper_id = data.replace("approve_arxiv_", "")
@@ -73,16 +73,28 @@ def process_queue():
 
     if approved_paper_id and source:
         print(f"Approval found. Source: {source}, ID: {approved_paper_id}")
-        
         paper_obj = None
         
-        # Route to the correct API based on the button prefix
+        # Route 1: Semantic Scholar
         if source == "ss":
+            headers = {}
+            ss_api_key = os.environ.get('SEMANTIC_SCHOLAR_API_KEY')
+            if ss_api_key:
+                headers['x-api-key'] = ss_api_key
+                
             api_url = f"https://api.semanticscholar.org/graph/v1/paper/{approved_paper_id}"
-            response = requests.get(api_url, params={"fields": "title,openAccessPdf"})
+            response = requests.get(api_url, params={"fields": "title,openAccessPdf"}, headers=headers)
             data = response.json()
             paper_obj = Paper(title=data['title'], pdf_url=data['openAccessPdf']['url'])
             
+        # Route 2: OpenAlex
+        elif source == "openalex":
+            api_url = f"https://api.openalex.org/works/{approved_paper_id}"
+            response = requests.get(api_url)
+            data = response.json()
+            paper_obj = Paper(title=data['title'], pdf_url=data['open_access']['oa_url'])
+            
+        # Route 3: ArXiv
         elif source == "arxiv":
             client = arxiv.Client()
             search = arxiv.Search(id_list=[approved_paper_id])

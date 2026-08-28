@@ -1,4 +1,5 @@
 import os
+import time
 import arxiv
 import requests
 import telebot
@@ -21,7 +22,7 @@ def save_sent_paper(paper_id):
         f.write(f"{paper_id}\n")
 
 def fetch_semantic_scholar(sent_papers):
-    print("Checking Semantic Scholar for peer-reviewed papers...")
+    print("1. Checking Semantic Scholar...")
     api_url = "https://api.semanticscholar.org/graph/v1/paper/search"
     params = {
         "query": "artificial intelligence OR machine learning",
@@ -31,45 +32,81 @@ def fetch_semantic_scholar(sent_papers):
         "year": "2026",
         "limit": 15
     }
-    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
+        "Accept": "application/json"
+    }
+    ss_api_key = os.environ.get('SEMANTIC_SCHOLAR_API_KEY')
+    if ss_api_key:
+        headers['x-api-key'] = ss_api_key
     try:
-        response = requests.get(api_url, params=params)
+        response = requests.get(api_url, params=params, headers=headers)
+        response.raise_for_status() 
         papers = response.json().get('data', [])
         
         for p in papers:
-            if p['paperId'] not in sent_papers:
+            if p['paperId'] not in sent_papers and p.get('openAccessPdf'):
                 authors = [a['name'] for a in p.get('authors', [])[:3]]
                 return {
                     "source": "ss",
                     "id": p['paperId'],
                     "title": p['title'],
                     "authors": ", ".join(authors),
-                    "venue": f"{p.get('venue') or 'Peer-Reviewed Venue'} ({p.get('year')})",
+                    "venue": f"{p.get('venue') or 'Peer-Reviewed Venue'}",
                     "pdf_url": p['openAccessPdf']['url']
                 }
+        return None
     except Exception as e:
-        print(f"Semantic Scholar API failed: {e}")
+        time.sleep(2)
+    return None
+
+def fetch_openalex(sent_papers):
+    print("2. Semantic Scholar failed. Checking OpenAlex...")
+    api_url = "https://api.openalex.org/works"
+    params = {
+        "search": "artificial intelligence OR machine learning",
+        "filter": "has_fulltext:true,is_oa:true,type:article,publication_year:2026",
+        "per-page": "15",
+        "mailto": "your_email@example.com" # <-- PUT YOUR EMAIL HERE
+    }
+    
+    try:
+        response = requests.get(api_url, params=params)
+        response.raise_for_status()
+        papers = response.json().get('results', [])
+        
+        for p in papers:
+            paper_id = p['id'].split('/')[-1] 
+            if paper_id not in sent_papers and p.get('open_access', {}).get('oa_url'):
+                authors = [a['author']['display_name'] for a in p.get('authorships', [])[:3]]
+                venue = "Peer-Reviewed Journal"
+                if p.get('primary_location') and p['primary_location'].get('source'):
+                    venue = p['primary_location']['source'].get('display_name', venue)
+                return {
+                    "source": "openalex",
+                    "id": paper_id,
+                    "title": p['title'],
+                    "authors": ", ".join(authors),
+                    "venue": venue,
+                    "pdf_url": p['open_access']['oa_url']
+                }
+    except Exception as e:
+        print(f"OpenAlex API failed: {e}")
     return None
 
 def fetch_arxiv(sent_papers):
-    print("Checking ArXiv for recent preprints...")
+    print("3. OpenAlex failed. Falling back to ArXiv...")
     try:
         client = arxiv.Client()
-        search = arxiv.Search(
-            query="cat:cs.AI",
-            max_results=15,
-            sort_by=arxiv.SortCriterion.SubmittedDate
-        )
-        
+        search = arxiv.Search(query="cat:cs.AI", max_results=15, sort_by=arxiv.SortCriterion.SubmittedDate)
         for p in client.results(search):
             arxiv_id = p.get_short_id()
             if arxiv_id not in sent_papers:
-                authors = [a.name for a in p.authors[:3]]
                 return {
                     "source": "arxiv",
                     "id": arxiv_id,
                     "title": p.title,
-                    "authors": ", ".join(authors),
+                    "authors": ", ".join([a.name for a in p.authors[:3]]),
                     "venue": "ArXiv Preprint",
                     "pdf_url": p.pdf_url
                 }
@@ -80,17 +117,17 @@ def fetch_arxiv(sent_papers):
 def fetch_and_send():
     sent_papers = get_sent_papers()
     
-    # Strategy: Try Semantic Scholar first, fallback to ArXiv
+    # The 3-Tier Cascade
     paper_info = fetch_semantic_scholar(sent_papers)
     if not paper_info:
-        print("No new peer-reviewed papers. Falling back to ArXiv...")
+        paper_info = fetch_openalex(sent_papers)
+    if not paper_info:
         paper_info = fetch_arxiv(sent_papers)
         
     if not paper_info:
-        print("No new papers found from either source today. Shutting down!")
+        print("No papers found from any source today. Shutting down!")
         return
 
-    # Prefix the callback data so the Night script knows which API to use
     prefix = paper_info['source']
     paper_id = paper_info['id']
     
@@ -110,8 +147,7 @@ def fetch_and_send():
     )
     
     bot.send_message(CHAT_ID, message_text, reply_markup=markup, parse_mode="Markdown")
-    print(f"Sent paper from {prefix} to Telegram.")
-    
+    print(f"Sent {prefix} paper to Telegram.")
     save_sent_paper(paper_id)
 
 if __name__ == "__main__":
