@@ -1,6 +1,6 @@
 # AI Paper to NotebookLM Podcast Automator
 
-An automated, zero-server workflow that scrapes the latest AI research papers from ArXiv, sends them to a Telegram bot for personal validation, and automatically converts approved papers into audio podcasts using Google's NotebookLM.
+An automated, zero-server workflow that scrapes the latest AI research papers from Semantic Scholar, Open Alex & ArXiv, sends them to a Telegram bot for validation, and automatically converts approved papers into audio podcasts using Google's NotebookLM.
 
 Built entirely on GitHub Actions to keep server costs at exactly $0.00.
 
