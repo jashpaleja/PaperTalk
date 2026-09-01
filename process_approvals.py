@@ -18,7 +18,7 @@ class Paper:
         self.source = source
 
 async def build_podcast(paper):
-    bot.send_message(CHAT_ID, f"Approval received! Sending '{paper.title}' to NotebookLM...")
+    # bot.send_message(CHAT_ID, f"Approval received! Sending '{paper.title}' to NotebookLM...")
     try:
         async with await NotebookLMClient.from_storage() as client:
             print("Creating Notebook...")

@@ -1,6 +1,6 @@
 # AI Paper to NotebookLM Podcast Automator
 
-An automated, zero-server workflow that scrapes the latest AI research papers from Semantic Scholar, Open Alex & ArXiv, sends them to a Telegram bot for validation, and automatically converts approved papers into audio podcasts using Google's NotebookLM.
+An automated, zero-server workflow that scrapes the latest AI research papers from ArXiv and Open Alex then sends them to a Telegram bot for validation, and automatically converts approved papers into audio podcasts using Google's NotebookLM.
 
 Built entirely on GitHub Actions to keep server costs at exactly $0.00.
 
@@ -25,7 +25,7 @@ Before pushing this code to GitHub, you need to gather three secret keys:
 1. **TELEGRAM_BOT_TOKEN:** Create a new bot via [@BotFather](https://t.me/botfather) on Telegram.
 2. **TELEGRAM_CHAT_ID:** Your personal (or group) Chat ID where the bot will send messages.
 3. **NOTEBOOKLM_SESSION:** A `storage_state.json` file containing your Google authentication cookies.
-4. **SEMANTIC_SCHOLAR_API_KEY:** Fill up [this](https://www.semanticscholar.org/product/api#api-key-form) form and you shall receive a api key in a few minutes.
+<!-- 4. **SEMANTIC_SCHOLAR_API_KEY:** Fill up [this](https://www.semanticscholar.org/product/api#api-key-form) form and you shall receive a api key in a few minutes. -->
 
 ## ⚙️ Setup Instructions
 

@@ -78,10 +78,11 @@ def fetch_arxiv(sent_papers):
 def fetch_and_send():
     sent_papers = get_sent_papers()
     
-    paper_info = fetch_openalex(sent_papers)
+    
+    paper_info = fetch_arxiv(sent_papers)
     if not paper_info:
-        paper_info = fetch_arxiv(sent_papers)
-        
+        paper_info = fetch_openalex(sent_papers)    
+
     if not paper_info:
         print("No papers found from any source today. Shutting down!")
         return
