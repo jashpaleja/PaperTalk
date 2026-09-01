@@ -16,7 +16,8 @@ Built entirely on GitHub Actions to keep server costs at exactly $0.00.
 This project is split into two lightweight, independent jobs:
 
 1. **Morning Job (`fetch_and_notify.py`):** Runs once a day. Queries ArXiv for the newest `cs.AI` papers, checks them against the local history file, and pushes an interactive Telegram message with **Approve/Reject** buttons. It then automatically commits the updated history file back to the repository.
-2. **Processing Job (`process_approvals.py`):** Runs three times a day. Wakes up, checks Telegram's offline queue for your button clicks, and processes your decision. If approved, it creates a new notebook in NotebookLM, attaches the paper, starts the podcast generation, and sends you a direct listening link.
+2. **Telegram Bot**: You can also send urls to the paper or send a pdf directly to the bot.
+3. **Processing Job (`process_approvals.py`):** Runs three times a day. Wakes up, checks Telegram's offline queue for your button clicks, any additional links or pdfs sent. If approved by button click or send a url or a pdf, it creates a new notebook in NotebookLM, attaches the paper, starts the podcast generation, and sends you a direct listening link.
 
 ## 📋 Prerequisites
 
