@@ -11,7 +11,6 @@ CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# UPDATE 1: Added 'source' to the class so the podcast builder knows where it came from
 class Paper:
     def __init__(self, title, pdf_url, source):
         self.title = title
@@ -25,33 +24,26 @@ async def build_podcast(paper):
             print("Creating Notebook...")
             nb = await client.notebooks.create(f"AI Paper: {paper.title}")
             
-            # UPDATE 2: Branching logic for URL vs Local Upload
             if paper.source == "arxiv":
                 print("Uploading ArXiv PDF link directly to NotebookLM...")
                 final_url = paper.pdf_url if paper.pdf_url.endswith('.pdf') else f"{paper.pdf_url}.pdf"
                 await client.sources.add_url(nb.id, final_url)
             else:
                 print(f"Downloading Publisher PDF locally ({paper.pdf_url})...")
-                # Use a standard browser User-Agent so publishers don't block the download
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
                 }
                 
-                # Fetch the PDF bytes
                 pdf_response = requests.get(paper.pdf_url, headers=headers, stream=True)
                 pdf_response.raise_for_status()
                 
-                # Save it temporarily to the GitHub runner
                 local_filename = f"temp_{paper.source}.pdf"
                 with open(local_filename, "wb") as f:
                     for chunk in pdf_response.iter_content(chunk_size=8192):
                         f.write(chunk)
                 
                 print("Uploading local PDF to NotebookLM...")
-                # The python API uses add_file for physical files
                 await client.sources.add_file(nb.id, local_filename)
-                
-                # Clean up the file so we don't bloat the server
                 os.remove(local_filename)
             
             print("Triggering Podcast Generation...")
@@ -85,18 +77,17 @@ def process_queue():
         if update.callback_query:
             data = update.callback_query.data
             
-            if data.startswith("approve_ss_"):
-                paper_id = data.replace("approve_ss_", "")
-                approved_papers[paper_id] = "ss"
-            elif data.startswith("approve_openalex_"):
+            if data.startswith("approve_openalex_"):
                 paper_id = data.replace("approve_openalex_", "")
                 approved_papers[paper_id] = "openalex"
             elif data.startswith("approve_arxiv_"):
                 paper_id = data.replace("approve_arxiv_", "")
                 approved_papers[paper_id] = "arxiv"
+            elif data.startswith("approve_ss_"):
+                bot.send_message(CHAT_ID, "⚠️ Semantic Scholar is no longer supported. Please approve a newer OpenAlex or ArXiv paper.")
 
     if not approved_papers:
-         print("No approvals found in the queue (only rejections or ignores).")
+         print("No valid approvals found in the queue.")
     else:
         print(f"Found {len(approved_papers)} approved papers to process!")
         
@@ -105,47 +96,17 @@ def process_queue():
             paper_obj = None
             
             try:
-                if source == "ss":
-                    headers = {}
-                    ss_api_key = os.environ.get('SEMANTIC_SCHOLAR_API_KEY')
-                    
-                    # Debugging: check if the key is actually loaded
-                    if ss_api_key:
-                        # .strip() removes any accidental spaces copied from the email
-                        headers['x-api-key'] = ss_api_key.strip()
-                    else:
-                        print("⚠️ WARNING: Semantic Scholar API key not found in environment!")
-                        
-                    api_url = f"https://api.semanticscholar.org/graph/v1/paper/{approved_paper_id}"
-
-                    print(f"Calling API SS: https://api.semanticscholar.org/graph/v1/paper/{approved_paper_id}")
-                    # Add a retry loop for the 1 request/second limit
-                    
-                    response = requests.get(api_url, params={"fields": "title,openAccessPdf"}, headers=headers)
-                    
-                    if response.status_code == 429:
-                        print(f"------ Rate limited -----")
-                        time.sleep(3)
-                        continue
-        
-                    response.raise_for_status()
-                    data = response.json()
-                    paper_obj = Paper(title=data['title'], pdf_url=data['openAccessPdf']['url'], source=source)
-                    
-                elif source == "openalex":
+                if source == "openalex":
                     api_url = f"https://api.openalex.org/works/{approved_paper_id}"
-                    print(f"Calling API OA: {api_url}")
                     response = requests.get(api_url)
                     response.raise_for_status()
                     data = response.json()
-                    # UPDATE 3: Passing the source to the Paper object
                     paper_obj = Paper(title=data['title'], pdf_url=data['open_access']['oa_url'], source=source)
                     
                 elif source == "arxiv":
                     client = arxiv.Client()
                     search = arxiv.Search(id_list=[approved_paper_id])
                     paper_data = next(client.results(search))
-                    # UPDATE 3: Passing the source to the Paper object
                     paper_obj = Paper(title=paper_data.title, pdf_url=paper_data.pdf_url, source=source)
                     
                 if paper_obj:

@@ -1,5 +1,4 @@
 import os
-import time
 import arxiv
 import requests
 import telebot
@@ -21,53 +20,13 @@ def save_sent_paper(paper_id):
     with open(STATE_FILE, "a") as f:
         f.write(f"{paper_id}\n")
 
-def fetch_semantic_scholar(sent_papers):
-    print("1. Checking Semantic Scholar...")
-    api_url = "https://api.semanticscholar.org/graph/v1/paper/search"
-    params = {
-        "query": "artificial intelligence OR machine learning",
-        "publicationTypes": "JournalArticle,Conference",
-        "openAccessPdf": "true",
-        "fields": "paperId,title,authors,openAccessPdf,venue,year",
-        "year": "2026",
-        "limit": 15
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0",
-        "Accept": "application/json"
-    }
-    ss_api_key = os.environ.get('SEMANTIC_SCHOLAR_API_KEY')
-    if ss_api_key:
-        headers['x-api-key'] = ss_api_key
-    try:
-        response = requests.get(api_url, params=params, headers=headers)
-        response.raise_for_status() 
-        papers = response.json().get('data', [])
-        
-        for p in papers:
-            if p['paperId'] not in sent_papers and p.get('openAccessPdf'):
-                authors = [a['name'] for a in p.get('authors', [])[:3]]
-                return {
-                    "source": "ss",
-                    "id": p['paperId'],
-                    "title": p['title'],
-                    "authors": ", ".join(authors),
-                    "venue": f"{p.get('venue') or 'Peer-Reviewed Venue'}",
-                    "pdf_url": p['openAccessPdf']['url']
-                }
-        return None
-    except Exception as e:
-        time.sleep(2)
-    return None
-
 def fetch_openalex(sent_papers):
-    print("2. Semantic Scholar failed. Checking OpenAlex...")
+    print("1. Checking OpenAlex for peer-reviewed papers...")
     api_url = "https://api.openalex.org/works"
     params = {
         "search": "artificial intelligence OR machine learning",
         "filter": "has_fulltext:true,is_oa:true,type:article,publication_year:2026",
-        "per-page": "15",
-        "mailto": "your_email@example.com" # <-- PUT YOUR EMAIL HERE
+        "per-page": "15"
     }
     
     try:
@@ -88,6 +47,7 @@ def fetch_openalex(sent_papers):
                     "title": p['title'],
                     "authors": ", ".join(authors),
                     "venue": venue,
+                    "url": p.get('id'),
                     "pdf_url": p['open_access']['oa_url']
                 }
     except Exception as e:
@@ -95,7 +55,7 @@ def fetch_openalex(sent_papers):
     return None
 
 def fetch_arxiv(sent_papers):
-    print("3. OpenAlex failed. Falling back to ArXiv...")
+    print("2. OpenAlex failed. Falling back to ArXiv...")
     try:
         client = arxiv.Client()
         search = arxiv.Search(query="cat:cs.AI", max_results=15, sort_by=arxiv.SortCriterion.SubmittedDate)
@@ -108,6 +68,7 @@ def fetch_arxiv(sent_papers):
                     "title": p.title,
                     "authors": ", ".join([a.name for a in p.authors[:3]]),
                     "venue": "ArXiv Preprint",
+                    "url": p.entry_id,
                     "pdf_url": p.pdf_url
                 }
     except Exception as e:
@@ -117,10 +78,7 @@ def fetch_arxiv(sent_papers):
 def fetch_and_send():
     sent_papers = get_sent_papers()
     
-    # The 3-Tier Cascade
-    paper_info = fetch_semantic_scholar(sent_papers)
-    if not paper_info:
-        paper_info = fetch_openalex(sent_papers)
+    paper_info = fetch_openalex(sent_papers)
     if not paper_info:
         paper_info = fetch_arxiv(sent_papers)
         
@@ -138,13 +96,12 @@ def fetch_and_send():
     )
     
     message_text = (
-        f"📄 **New AI Paper Review**\n\n"
         f"**Title:** {paper_info['title']}\n"
         f"**Source:** {prefix.upper()}\n"
         f"**Authors:** {paper_info['authors']}\n"
         f"**Published In:** {paper_info['venue']}\n"
-        f"**Link:** {paper_info['pdf_url']}\n\n"
-        # f"Approve this to generate a NotebookLM podcast."
+        f"**Link:** {paper_info['url']}\n"
+        f"**PDF:** {paper_info['pdf_url']}"
     )
     
     bot.send_message(CHAT_ID, message_text, reply_markup=markup, parse_mode="Markdown")
