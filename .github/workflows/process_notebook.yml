@@ -27,7 +27,7 @@ jobs:
         run: |
           pip install arxiv requests pyTelegramBotAPI
           
-      # 2. Peek at the Telegram queue to see if an approval is waiting
+      # 2. Peek at the Telegram queue to see if an approval, PDF, or Link is waiting
       - name: Check Telegram Queue
         id: check_queue
         env:
@@ -38,17 +38,22 @@ jobs:
           bot = telebot.TeleBot(os.environ.get('TELEGRAM_BOT_TOKEN'))
           updates = bot.get_updates()
           
-          # Look for an 'approve' click
-          has_approval = any(u.callback_query and u.callback_query.data.startswith('approve_') for u in updates)
-          
-          # If the user clicked 'reject', clear it so it doesn't get stuck in the queue
-          if updates and not has_approval:
+          has_work = False
+          for u in updates:
+              if u.callback_query and u.callback_query.data.startswith('approve_'):
+                  has_work = True
+              elif u.message:
+                  if u.message.document and u.message.document.mime_type == 'application/pdf':
+                      has_work = True
+                  elif u.message.text and u.message.text.startswith('http'):
+                      has_work = True
+                      
+          if updates and not has_work:
               bot.get_updates(offset=updates[-1].update_id + 1)
               print('Cleared rejected or ignored clicks from the queue.')
               
-          # Save the result to GitHub Actions outputs
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f'has_approval={str(has_approval).lower()}\n')
+              f.write(f'has_approval={str(has_work).lower()}\n')
           "
 
       # 3. ONLY run this heavy download if an approval was found
