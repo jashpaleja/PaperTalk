@@ -51,64 +51,81 @@ def process_queue():
         return
         
     last_update_id = 0
-    approved_paper_id = None
-    source = None
+    
+    # We will use a dictionary to store approvals: { "paper_id": "source" }
+    # This automatically prevents processing the exact same paper twice if you double-clicked
+    approved_papers = {}
     
     for update in updates:
         last_update_id = update.update_id
         if update.callback_query:
             data = update.callback_query.data
+            
             if data.startswith("approve_ss_"):
-                source = "ss"
-                approved_paper_id = data.replace("approve_ss_", "")
+                paper_id = data.replace("approve_ss_", "")
+                approved_papers[paper_id] = "ss"
             elif data.startswith("approve_openalex_"):
-                source = "openalex"
-                approved_paper_id = data.replace("approve_openalex_", "")
+                paper_id = data.replace("approve_openalex_", "")
+                approved_papers[paper_id] = "openalex"
             elif data.startswith("approve_arxiv_"):
-                source = "arxiv"
-                approved_paper_id = data.replace("approve_arxiv_", "")
-            elif data.startswith("reject_"):
-                approved_paper_id = None
-                source = None
+                paper_id = data.replace("approve_arxiv_", "")
+                approved_papers[paper_id] = "arxiv"
+            # Note: We intentionally ignore "reject_" clicks here. 
+            # They just get cleared when we advance the offset at the end.
 
-    if approved_paper_id and source:
-        print(f"Approval found. Source: {source}, ID: {approved_paper_id}")
-        paper_obj = None
-        
-        # Route 1: Semantic Scholar
-        if source == "ss":
-            headers = {}
-            ss_api_key = os.environ.get('SEMANTIC_SCHOLAR_API_KEY')
-            if ss_api_key:
-                headers['x-api-key'] = ss_api_key
-                
-            api_url = f"https://api.semanticscholar.org/graph/v1/paper/{approved_paper_id}"
-            response = requests.get(api_url, params={"fields": "title,openAccessPdf"}, headers=headers)
-            data = response.json()
-            paper_obj = Paper(title=data['title'], pdf_url=data['openAccessPdf']['url'])
-            
-        # Route 2: OpenAlex
-        elif source == "openalex":
-            api_url = f"https://api.openalex.org/works/{approved_paper_id}"
-            response = requests.get(api_url)
-            data = response.json()
-            paper_obj = Paper(title=data['title'], pdf_url=data['open_access']['oa_url'])
-            
-        # Route 3: ArXiv
-        elif source == "arxiv":
-            client = arxiv.Client()
-            search = arxiv.Search(id_list=[approved_paper_id])
-            paper_data = next(client.results(search))
-            paper_obj = Paper(title=paper_data.title, pdf_url=paper_data.pdf_url)
-            
-        if paper_obj:
-            asyncio.run(build_podcast(paper_obj))
-            
+    if not approved_papers:
+         print("No approvals found in the queue (only rejections or ignores).")
     else:
-        bot.send_message(CHAT_ID, "Paper was rejected or ignored today. Skipping.")
+        print(f"Found {len(approved_papers)} approved papers to process!")
         
+        # Loop through every unique paper you approved
+        for approved_paper_id, source in approved_papers.items():
+            print(f"\nProcessing -> Source: {source}, ID: {approved_paper_id}")
+            paper_obj = None
+            
+            try:
+                # Route 1: Semantic Scholar
+                if source == "ss":
+                    headers = {}
+                    ss_api_key = os.environ.get('SEMANTIC_SCHOLAR_API_KEY')
+                    if ss_api_key:
+                        headers['x-api-key'] = ss_api_key
+                        
+                    api_url = f"https://api.semanticscholar.org/graph/v1/paper/{approved_paper_id}"
+                    response = requests.get(api_url, params={"fields": "title,openAccessPdf"}, headers=headers)
+                    response.raise_for_status()
+                    data = response.json()
+                    paper_obj = Paper(title=data['title'], pdf_url=data['openAccessPdf']['url'])
+                    
+                # Route 2: OpenAlex
+                elif source == "openalex":
+                    api_url = f"https://api.openalex.org/works/{approved_paper_id}"
+                    response = requests.get(api_url)
+                    response.raise_for_status()
+                    data = response.json()
+                    paper_obj = Paper(title=data['title'], pdf_url=data['open_access']['oa_url'])
+                    
+                # Route 3: ArXiv
+                elif source == "arxiv":
+                    client = arxiv.Client()
+                    search = arxiv.Search(id_list=[approved_paper_id])
+                    paper_data = next(client.results(search))
+                    paper_obj = Paper(title=paper_data.title, pdf_url=paper_data.pdf_url)
+                    
+                if paper_obj:
+                    # We run each one individually and wait for it to trigger
+                    asyncio.run(build_podcast(paper_obj))
+                    # Add a small delay between requests to avoid slamming Google's servers
+                    time.sleep(2) 
+                    
+            except Exception as e:
+                error_msg = f"❌ Failed to route paper {approved_paper_id} from {source}: {e}"
+                print(error_msg)
+                bot.send_message(CHAT_ID, error_msg)
+
+    # Clear the queue so we don't process these again
     bot.get_updates(offset=last_update_id + 1)
-    print("Queue cleared. Shutting down!")
+    print("\nQueue cleared. Shutting down!")
 
 if __name__ == "__main__":
     process_queue()

@@ -48,7 +48,7 @@ def fetch_semantic_scholar(sent_papers):
             if p['paperId'] not in sent_papers and p.get('openAccessPdf'):
                 authors = [a['name'] for a in p.get('authors', [])[:3]]
                 return {
-                    "source": "ss",
+                    "source": "semantic scholar",
                     "id": p['paperId'],
                     "title": p['title'],
                     "authors": ", ".join(authors),
@@ -140,10 +140,11 @@ def fetch_and_send():
     message_text = (
         f"📄 **New AI Paper Review**\n\n"
         f"**Title:** {paper_info['title']}\n"
+        f"**Source:** {prefix.upper()}\n"
         f"**Authors:** {paper_info['authors']}\n"
         f"**Published In:** {paper_info['venue']}\n"
         f"**Link:** {paper_info['pdf_url']}\n\n"
-        f"Approve this to generate a NotebookLM podcast."
+        # f"Approve this to generate a NotebookLM podcast."
     )
     
     bot.send_message(CHAT_ID, message_text, reply_markup=markup, parse_mode="Markdown")

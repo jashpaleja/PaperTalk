@@ -13,7 +13,7 @@ on:
   workflow_dispatch: 
 
 jobs:
-  run-processing:
+  process-approvals:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,20 +22,55 @@ jobs:
         with:
           python-version: "3.11"
           
-      - name: Install dependencies
+      # 1. Install ONLY the lightweight packages needed to check Telegram
+      - name: Install base dependencies
         run: |
-          pip install arxiv pyTelegramBotAPI
+          pip install arxiv requests pyTelegramBotAPI
+          
+      # 2. Peek at the Telegram queue to see if an approval is waiting
+      - name: Check Telegram Queue
+        id: check_queue
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python -c "
+          import os, telebot
+          bot = telebot.TeleBot(os.environ.get('TELEGRAM_BOT_TOKEN'))
+          updates = bot.get_updates()
+          
+          # Look for an 'approve' click
+          has_approval = any(u.callback_query and u.callback_query.data.startswith('approve_') for u in updates)
+          
+          # If the user clicked 'reject', clear it so it doesn't get stuck in the queue
+          if updates and not has_approval:
+              bot.get_updates(offset=updates[-1].update_id + 1)
+              print('Cleared rejected or ignored clicks from the queue.')
+              
+          # Save the result to GitHub Actions outputs
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'has_approval={str(has_approval).lower()}\n')
+          "
+
+      # 3. ONLY run this heavy download if an approval was found
+      - name: Install heavy dependencies
+        if: steps.check_queue.outputs.has_approval == 'true'
+        run: |
           pip install "notebooklm-py[browser]"
           python -m playwright install chromium
-          
+
+      # 4. ONLY restore the Google session if an approval was found
       - name: Restore NotebookLM Session
+        if: steps.check_queue.outputs.has_approval == 'true'
         env:
           SESSION_JSON: ${{ secrets.NOTEBOOKLM_SESSION }}
         run: |
           mkdir -p ~/.notebooklm
           echo "$SESSION_JSON" > ~/.notebooklm/storage_state.json
-          
-      - env:
+
+      # 5. ONLY run your actual podcast generation script if an approval was found
+      - name: Process Podcast
+        if: steps.check_queue.outputs.has_approval == 'true'
+        env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
