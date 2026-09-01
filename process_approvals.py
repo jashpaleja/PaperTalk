@@ -108,14 +108,30 @@ def process_queue():
                 if source == "ss":
                     headers = {}
                     ss_api_key = os.environ.get('SEMANTIC_SCHOLAR_API_KEY')
+                    
+                    # Debugging: check if the key is actually loaded
                     if ss_api_key:
-                        headers['x-api-key'] = ss_api_key
+                        # .strip() removes any accidental spaces copied from the email
+                        headers['x-api-key'] = ss_api_key.strip()
+                    else:
+                        print("⚠️ WARNING: Semantic Scholar API key not found in environment!")
                         
                     api_url = f"https://api.semanticscholar.org/graph/v1/paper/{approved_paper_id}"
-                    response = requests.get(api_url, params={"fields": "title,openAccessPdf"}, headers=headers)
-                    response.raise_for_status()
+                    
+                    # Add a retry loop for the 1 request/second limit
+                    for attempt in range(3):
+                        response = requests.get(api_url, params={"fields": "title,openAccessPdf"}, headers=headers)
+                        
+                        if response.status_code == 429:
+                            wait_time = 3 * (attempt + 1)
+                            print(f"Rate limited on attempt {attempt + 1}. Waiting {wait_time}s...")
+                            time.sleep(wait_time)
+                            continue
+                            
+                        response.raise_for_status()
+                        break # Success! Break out of the retry loop
+                        
                     data = response.json()
-                    # UPDATE 3: Passing the source to the Paper object
                     paper_obj = Paper(title=data['title'], pdf_url=data['openAccessPdf']['url'], source=source)
                     
                 elif source == "openalex":
