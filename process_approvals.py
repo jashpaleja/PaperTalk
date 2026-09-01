@@ -4,6 +4,7 @@ import requests
 import telebot
 import asyncio
 from notebooklm import NotebookLMClient
+import time
 
 BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
