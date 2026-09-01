@@ -48,7 +48,7 @@ def fetch_semantic_scholar(sent_papers):
             if p['paperId'] not in sent_papers and p.get('openAccessPdf'):
                 authors = [a['name'] for a in p.get('authors', [])[:3]]
                 return {
-                    "source": "semantic scholar",
+                    "source": "ss",
                     "id": p['paperId'],
                     "title": p['title'],
                     "authors": ", ".join(authors),

@@ -117,25 +117,24 @@ def process_queue():
                         print("⚠️ WARNING: Semantic Scholar API key not found in environment!")
                         
                     api_url = f"https://api.semanticscholar.org/graph/v1/paper/{approved_paper_id}"
-                    
+
+                    print(f"Calling API SS: https://api.semanticscholar.org/graph/v1/paper/{approved_paper_id}")
                     # Add a retry loop for the 1 request/second limit
-                    for attempt in range(3):
-                        response = requests.get(api_url, params={"fields": "title,openAccessPdf"}, headers=headers)
-                        
-                        if response.status_code == 429:
-                            wait_time = 3 * (attempt + 1)
-                            print(f"Rate limited on attempt {attempt + 1}. Waiting {wait_time}s...")
-                            time.sleep(wait_time)
-                            continue
-                            
-                        response.raise_for_status()
-                        break # Success! Break out of the retry loop
-                        
+                    
+                    response = requests.get(api_url, params={"fields": "title,openAccessPdf"}, headers=headers)
+                    
+                    if response.status_code == 429:
+                        print(f"------ Rate limited -----")
+                        time.sleep(3)
+                        continue
+        
+                    response.raise_for_status()
                     data = response.json()
                     paper_obj = Paper(title=data['title'], pdf_url=data['openAccessPdf']['url'], source=source)
                     
                 elif source == "openalex":
                     api_url = f"https://api.openalex.org/works/{approved_paper_id}"
+                    print(f"Calling API OA: {api_url}")
                     response = requests.get(api_url)
                     response.raise_for_status()
                     data = response.json()
