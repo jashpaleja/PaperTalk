@@ -63,7 +63,7 @@ async def build_podcast(paper):
                 f"Google is building the audio in the background. It will be ready in about 10-15 minutes.\n\n"
                 f"[Click here to listen on NotebookLM]({notebook_url})"
             )
-            bot.send_message(CHAT_ID, message, parse_mode="Markdown")
+            bot.send_message(CHAT_ID, message)
             
     except Exception as e:
         bot.send_message(CHAT_ID, f"❌ NotebookLM Error: {str(e)}")
