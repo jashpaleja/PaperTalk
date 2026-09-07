@@ -1,4 +1,6 @@
 import os
+import json
+import datetime
 import arxiv
 import requests
 import telebot
@@ -8,17 +10,22 @@ BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 bot = telebot.TeleBot(BOT_TOKEN)
-STATE_FILE = "sent_papers.txt"
+DB_FILE = "paper_database.json"
 
-def get_sent_papers():
-    if not os.path.exists(STATE_FILE):
-        return set()
-    with open(STATE_FILE, "r") as f:
-        return set(line.strip() for line in f)
+def load_db():
+    if not os.path.exists(DB_FILE):
+        return {
+            "sent_papers": [], 
+            "approved_papers": [], 
+            "date": str(datetime.date.today()), 
+            "daily_count": 0
+        }
+    with open(DB_FILE, "r") as f:
+        return json.load(f)
 
-def save_sent_paper(paper_id):
-    with open(STATE_FILE, "a") as f:
-        f.write(f"{paper_id}\n")
+def save_db(db):
+    with open(DB_FILE, "w") as f:
+        json.dump(db, f, indent=4)
 
 def fetch_openalex(sent_papers):
     print("1. Checking OpenAlex for peer-reviewed papers...")
@@ -76,13 +83,13 @@ def fetch_arxiv(sent_papers):
     return None
 
 def fetch_and_send():
-    sent_papers = get_sent_papers()
+    db = load_db()
+    sent_papers = set(db["sent_papers"])
     
-    
-    paper_info = fetch_arxiv(sent_papers)
+    paper_info = fetch_openalex(sent_papers)
     if not paper_info:
-        paper_info = fetch_openalex(sent_papers)    
-
+        paper_info = fetch_arxiv(sent_papers)
+        
     if not paper_info:
         print("No papers found from any source today. Shutting down!")
         return
@@ -105,9 +112,12 @@ def fetch_and_send():
         f"**PDF:** {paper_info['pdf_url']}"
     )
     
-    bot.send_message(CHAT_ID, message_text, reply_markup=markup, parse_mode="Markdown")
+    bot.send_message(CHAT_ID, message_text, reply_markup=markup)
     print(f"Sent {prefix} paper to Telegram.")
-    save_sent_paper(paper_id)
+    
+    # Save to JSON database
+    db["sent_papers"].append(paper_id)
+    save_db(db)
 
 if __name__ == "__main__":
     fetch_and_send()

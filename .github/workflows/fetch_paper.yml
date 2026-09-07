@@ -25,11 +25,14 @@ jobs:
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
         run: python fetch_and_notify.py
         
-      # ADDED: This commits the updated sent_papers.txt file back to the repo
-      - name: Save sent papers state
+      # Save the updated JSON database back to the repository so the next run remembers the count
+      - name: Commit and Push Database
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add sent_papers.txt
-          git commit -m "Update sent papers list" || echo "No new papers sent today"
-          git push || echo "Nothing to push"
+          git add paper_database.json
+          
+          # Only commit and push if the file actually changed
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto-update paper database queue" && git push "https://${GH_TOKEN}@github.com/${{ github.repository }}.git")
