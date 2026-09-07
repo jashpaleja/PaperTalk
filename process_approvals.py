@@ -54,7 +54,25 @@ async def build_podcast(paper):
                 os.remove(local_filename)
             
             print("Triggering Podcast Generation...")
-            await client.artifacts.generate_audio(nb.id)
+            
+            # --- Auto-Retry Loop for Google's Rate Limits ---
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    await client.artifacts.generate_audio(nb.id)
+                    break # Success! Break out of the loop
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if "rate limit" in error_str or "resource exhausted" in error_str or "429" in error_str:
+                        if attempt < max_retries - 1:
+                            wait_time = 60 * (attempt + 1)
+                            print(f"Rate limited by Google. Waiting {wait_time}s...")
+                            bot.send_message(CHAT_ID, f"⚠️ Google requested a cooldown. Waiting {wait_time} seconds before trying '{paper.title}' again...")
+                            await asyncio.sleep(wait_time) # Async sleep!
+                        else:
+                            raise Exception("Google permanently rate-limited this request after 3 attempts.")
+                    else:
+                        raise e # If it's a different error, crash normally
             
             notebook_url = f"https://notebooklm.google.com/notebook/{nb.id}"
             message = (
