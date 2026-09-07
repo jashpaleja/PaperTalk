@@ -80,3 +80,11 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
         run: python process_approvals.py
+      
+      # 6. Save the refreshed Google cookies back to GitHub Secrets to keep the session alive
+      - name: Auto-Refresh Google Session
+        if: steps.check_queue.outputs.has_approval == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          gh secret set NOTEBOOKLM_SESSION < ~/.notebooklm/storage_state.json
