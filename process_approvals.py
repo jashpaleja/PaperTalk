@@ -56,6 +56,9 @@ async def build_podcast(paper):
                 await client.sources.add_file(nb.id, local_filename)
                 os.remove(local_filename)
             
+            print("Waiting 15 seconds for Google to index the document...")
+            await asyncio.sleep(15) # Give Google time to read the PDF
+            
             print("Triggering Podcast Generation...")
             
             max_retries = 3
@@ -159,8 +162,8 @@ def process_queue():
             if success:
                 db["daily_count"] += 1
                 save_db(db)
-            print("Cooling down for 60 seconds...")
-            time.sleep(60)
+            print("Waiting 15 minutes for the podcast to finish generating before starting the next one...")
+            time.sleep(900)
             
         except Exception as e:
             bot.send_message(CHAT_ID, f"❌ Failed to process custom message: {e}")
@@ -177,19 +180,19 @@ def process_queue():
         paper_obj = None
         
         try:
-            if source == "openalex":
+            if source == "arxiv":
+                client = arxiv.Client()
+                search = arxiv.Search(id_list=[approved_paper_id])
+                paper_data = next(client.results(search))
+                paper_obj = Paper(title=f"AI Paper: {paper_data.title}", pdf_url=paper_data.pdf_url, source=source)
+
+            elif source == "openalex":
                 api_url = f"https://api.openalex.org/works/{approved_paper_id}"
                 response = requests.get(api_url)
                 response.raise_for_status()
                 data = response.json()
                 paper_obj = Paper(title=f"AI Paper: {data['title']}", pdf_url=data['open_access']['oa_url'], source=source)
-                
-            elif source == "arxiv":
-                client = arxiv.Client()
-                search = arxiv.Search(id_list=[approved_paper_id])
-                paper_data = next(client.results(search))
-                paper_obj = Paper(title=f"AI Paper: {paper_data.title}", pdf_url=paper_data.pdf_url, source=source)
-                
+                    
             if paper_obj:
                 success = asyncio.run(build_podcast(paper_obj))
                 
@@ -199,8 +202,8 @@ def process_queue():
                     db["daily_count"] += 1
                     save_db(db)
                     
-                print("Cooling down for 60 seconds...")
-                time.sleep(60) 
+                print("Waiting 15 minutes for the podcast to finish generating before starting the next one...")
+                time.sleep(900) 
                 
         except Exception as e:
             bot.send_message(CHAT_ID, f"❌ Failed to fetch paper data for {queued_item}: {e}")
