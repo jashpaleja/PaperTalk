@@ -39,10 +39,10 @@ async def build_podcast(paper):
             nb = await client.notebooks.create(paper.title)
             
             if paper.local_file:
-                await client.sources.add_file(nb.id, paper.local_file)
+                await client.sources.add_file(nb.id, paper.local_file, wait=True)
             elif paper.source == "arxiv" or (paper.pdf_url and "arxiv.org" in paper.pdf_url):
                 final_url = paper.pdf_url if paper.pdf_url.endswith('.pdf') else f"{paper.pdf_url}.pdf"
-                await client.sources.add_url(nb.id, final_url)
+                await client.sources.add_url(nb.id, final_url, wait=True)
             else:
                 headers = {"User-Agent": "Mozilla/5.0"}
                 pdf_response = requests.get(paper.pdf_url, headers=headers, stream=True)
@@ -53,7 +53,7 @@ async def build_podcast(paper):
                     for chunk in pdf_response.iter_content(chunk_size=8192):
                         f.write(chunk)
                 
-                await client.sources.add_file(nb.id, local_filename)
+                await client.sources.add_file(nb.id, local_filename, wait=True)
                 os.remove(local_filename)
             
             print("Waiting 15 seconds for Google to index the document...")
@@ -202,8 +202,8 @@ def process_queue():
                     db["daily_count"] += 1
                     save_db(db)
                     
-                print("Waiting 15 minutes for the podcast to finish generating before starting the next one...")
-                time.sleep(900) 
+                print("Waiting....")
+                time.sleep(100) 
                 
         except Exception as e:
             bot.send_message(CHAT_ID, f"❌ Failed to fetch paper data for {queued_item}: {e}")
