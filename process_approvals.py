@@ -23,9 +23,21 @@ class Paper:
 
 def load_db():
     if not os.path.exists(DB_FILE):
-        return {"sent_papers": [], "approved_papers": [], "date": str(datetime.date.today()), "daily_count": 0}
+        return {"sent_papers": [], "pending_queue": {}, "date": str(datetime.date.today()), "daily_count": 0}
     with open(DB_FILE, "r") as f:
-        return json.load(f)
+        db = json.load(f)
+        
+    # Auto-migrate old list format to new dictionary format
+    if "approved_papers" in db:
+        db["pending_queue"] = {}
+        for item in db["approved_papers"]:
+            db["pending_queue"][item] = {"type": "api", "attempts": 0, "last_attempt_date": ""}
+        del db["approved_papers"]
+        
+    if "pending_queue" not in db:
+        db["pending_queue"] = {}
+        
+    return db
 
 def save_db(db):
     with open(DB_FILE, "w") as f:
@@ -44,7 +56,7 @@ async def build_podcast(paper):
                 final_url = paper.pdf_url if paper.pdf_url.endswith('.pdf') else f"{paper.pdf_url}.pdf"
                 await client.sources.add_url(nb.id, final_url, wait=True)
             else:
-                headers = {"User-Agent": "Mozilla/5.0"}
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
                 pdf_response = requests.get(paper.pdf_url, headers=headers, stream=True)
                 pdf_response.raise_for_status()
                 
@@ -55,9 +67,6 @@ async def build_podcast(paper):
                 
                 await client.sources.add_file(nb.id, local_filename, wait=True)
                 os.remove(local_filename)
-            
-            print("Waiting 15 seconds for Google to index the document...")
-            await asyncio.sleep(15) # Give Google time to read the PDF
             
             print("Triggering Podcast Generation...")
             
@@ -74,8 +83,10 @@ async def build_podcast(paper):
                             bot.send_message(CHAT_ID, f"⚠️ Google requested a cooldown. Waiting {wait_time}s...")
                             await asyncio.sleep(wait_time)
                         else:
-                            raise Exception("Google permanently rate-limited this request.")
+                            # If it fails 3 times, return a specific global rate limit error
+                            return "rate_limit"
                     else:
+                        # Re-raise standard errors (like bad PDFs) to hit the main except block
                         raise e
             
             notebook_url = f"https://notebooklm.google.com/notebook/{nb.id}"
@@ -86,17 +97,16 @@ async def build_podcast(paper):
                 f"Link: {notebook_url}"
             )
             bot.send_message(CHAT_ID, message)
-            return True # Return True ONLY on total success
+            return "success"
             
     except Exception as e:
         bot.send_message(CHAT_ID, f"❌ NotebookLM Error: {str(e)}")
-        return False
+        return "error"
 
 def process_queue():
     db = load_db()
     today_str = str(datetime.date.today())
     
-    # Reset daily limit if it's a new day
     if db.get("date") != today_str:
         db["date"] = today_str
         db["daily_count"] = 0
@@ -104,110 +114,119 @@ def process_queue():
         
     updates = bot.get_updates()
     last_update_id = 0
-    custom_jobs = []
     
-    # 1. READ TELEGRAM QUEUE
+    # 1. READ TELEGRAM QUEUE & INGEST INTO DATABASE
     if updates:
         for update in updates:
             last_update_id = update.update_id
             
-            # Button clicks go permanently into the JSON queue
             if update.callback_query:
                 data = update.callback_query.data
                 if data.startswith("approve_"):
-                    # Store as "source_paperid" (e.g., "openalex_W12345")
-                    source_and_id = data.replace("approve_", "")
-                    if source_and_id not in db["approved_papers"]:
-                        db["approved_papers"].append(source_and_id)
+                    job_id = data.replace("approve_", "")
+                    if job_id not in db["pending_queue"]:
+                        db["pending_queue"][job_id] = {"type": "api", "attempts": 0, "last_attempt_date": ""}
                         
-            # Direct messages get processed immediately in the current run
             elif update.message:
                 if update.message.document and update.message.document.mime_type == 'application/pdf':
-                    custom_jobs.append({
-                        'type': 'pdf', 'file_id': update.message.document.file_id,
-                        'title': update.message.document.file_name or "Uploaded_Document.pdf"
-                    })
+                    job_id = f"pdf_{update.message.document.file_id}"
+                    if job_id not in db["pending_queue"]:
+                        db["pending_queue"][job_id] = {
+                            "type": "pdf", 
+                            "file_id": update.message.document.file_id,
+                            "title": update.message.document.file_name or "Uploaded_Document.pdf",
+                            "attempts": 0, 
+                            "last_attempt_date": ""
+                        }
                 elif update.message.text and update.message.text.startswith('http'):
                     url = update.message.text.strip()
                     raw_name = url.split('/')[-1].split('?')[0]
                     title = f"Shared Link: {raw_name}" if len(raw_name) > 3 else "Shared Web Link"
-                    custom_jobs.append({'type': 'link', 'url': url, 'title': title})
+                    job_id = f"link_{int(time.time())}"
+                    db["pending_queue"][job_id] = {
+                        "type": "link", "url": url, "title": title,
+                        "attempts": 0, "last_attempt_date": ""
+                    }
 
-        # Advance the Telegram Queue pointer so we don't read these messages again
         bot.get_updates(offset=last_update_id + 1)
         save_db(db)
 
-    # 2. PROCESS CUSTOM JOBS (Manual PDF Uploads & Links)
-    for job in custom_jobs:
+    # 2. PROCESS THE QUEUE
+    # We iterate over a copy of keys so we can safely delete items from the actual dict
+    for job_id in list(db["pending_queue"].keys()):
+        job_data = db["pending_queue"][job_id]
+        
         if db["daily_count"] >= 3:
-            bot.send_message(CHAT_ID, "⚠️ Daily limit (3) reached. Custom files/links are not queued. Please try again tomorrow!")
+            print("⚠️ Daily limit (3) reached. Halting pipeline for today.")
             break
             
-        try:
-            if job['type'] == 'pdf':
-                file_info = bot.get_file(job['file_id'])
-                downloaded_file = bot.download_file(file_info.file_path)
-                local_path = f"telegram_{job['file_id']}.pdf"
-                with open(local_path, 'wb') as new_file:
-                    new_file.write(downloaded_file)
-                
-                paper_obj = Paper(title=job['title'], local_file=local_path)
-                success = asyncio.run(build_podcast(paper_obj))
-                os.remove(local_path)
-                
-            elif job['type'] == 'link':
-                paper_obj = Paper(title=job['title'], pdf_url=job['url'], source='telegram_link')
-                success = asyncio.run(build_podcast(paper_obj))
-                
-            if success:
-                db["daily_count"] += 1
-                save_db(db)
-            print("Waiting 15 minutes for the podcast to finish generating before starting the next one...")
-            time.sleep(900)
+        # Ensure we only try a paper once per day
+        if job_data["last_attempt_date"] == today_str:
+            print(f"Skipping {job_id} - already attempted today.")
+            continue
             
-        except Exception as e:
-            bot.send_message(CHAT_ID, f"❌ Failed to process custom message: {e}")
-
-    # 3. PROCESS THE JSON DATABASE QUEUE (Automated Approvals)
-    # We use list(db["approved_papers"]) to iterate safely over a copy while modifying the original
-    for queued_item in list(db["approved_papers"]):
-        if db["daily_count"] >= 3:
-            bot.send_message(CHAT_ID, "⚠️ Daily NotebookLM limit (3) reached. Remaining approved papers are saved in the queue for tomorrow!")
-            break
-            
-        source, approved_paper_id = queued_item.split("_", 1)
-        print(f"\nProcessing from Queue -> Source: {source}, ID: {approved_paper_id}")
+        print(f"\nProcessing from Queue -> {job_id}")
         paper_obj = None
         
         try:
-            if source == "arxiv":
-                client = arxiv.Client()
-                search = arxiv.Search(id_list=[approved_paper_id])
-                paper_data = next(client.results(search))
-                paper_obj = Paper(title=f"AI Paper: {paper_data.title}", pdf_url=paper_data.pdf_url, source=source)
-
-            elif source == "openalex":
-                api_url = f"https://api.openalex.org/works/{approved_paper_id}"
-                response = requests.get(api_url)
-                response.raise_for_status()
-                data = response.json()
-                paper_obj = Paper(title=f"AI Paper: {data['title']}", pdf_url=data['open_access']['oa_url'], source=source)
+            # Reconstruct the Paper object based on its type
+            if job_data["type"] == "api":
+                source, paper_id = job_id.split("_", 1)
+                if source == "openalex":
+                    response = requests.get(f"https://api.openalex.org/works/{paper_id}")
+                    response.raise_for_status()
+                    data = response.json()
+                    paper_obj = Paper(title=f"AI Paper: {data['title']}", pdf_url=data['open_access']['oa_url'], source=source)
+                elif source == "arxiv":
+                    search = arxiv.Search(id_list=[paper_id])
+                    paper_data = next(arxiv.Client().results(search))
+                    paper_obj = Paper(title=f"AI Paper: {paper_data.title}", pdf_url=paper_data.pdf_url, source=source)
                     
-            if paper_obj:
-                success = asyncio.run(build_podcast(paper_obj))
+            elif job_data["type"] == "pdf":
+                file_info = bot.get_file(job_data["file_id"])
+                downloaded_file = bot.download_file(file_info.file_path)
+                local_path = f"telegram_{job_data['file_id']}.pdf"
+                with open(local_path, 'wb') as new_file:
+                    new_file.write(downloaded_file)
+                paper_obj = Paper(title=job_data["title"], local_file=local_path)
                 
-                # ONLY delete from the queue if Google successfully started generating!
-                if success:
-                    db["approved_papers"].remove(queued_item)
+            elif job_data["type"] == "link":
+                paper_obj = Paper(title=job_data["title"], pdf_url=job_data["url"], source='telegram_link')
+                
+            if paper_obj:
+                status = asyncio.run(build_podcast(paper_obj))
+                
+                if paper_obj.local_file and os.path.exists(paper_obj.local_file):
+                    os.remove(paper_obj.local_file)
+                
+                # Analyze the result
+                if status == "success":
+                    del db["pending_queue"][job_id]
                     db["daily_count"] += 1
                     save_db(db)
+                    print("Cooling down for 60 seconds...")
+                    time.sleep(60) 
                     
-                print("Waiting....")
-                time.sleep(100) 
-                
+                elif status == "rate_limit":
+                    print("Global rate limit hit. Halting pipeline.")
+                    bot.send_message(CHAT_ID, "⚠️ Google NotebookLM rate limit reached. Pausing all processing until tomorrow.")
+                    job_data["last_attempt_date"] = today_str
+                    save_db(db)
+                    break # Halt the entire pipeline loop
+                    
+                elif status == "error":
+                    job_data["attempts"] += 1
+                    job_data["last_attempt_date"] = today_str
+                    
+                    if job_data["attempts"] >= 5:
+                        bot.send_message(CHAT_ID, f"❌ Gave up on '{paper_obj.title}' after 5 days of errors. Removing from queue.")
+                        del db["pending_queue"][job_id]
+                    
+                    save_db(db)
+                    
         except Exception as e:
-            bot.send_message(CHAT_ID, f"❌ Failed to fetch paper data for {queued_item}: {e}")
-
+            bot.send_message(CHAT_ID, f"❌ Pipeline Data Error for {job_id}: {e}")
+            
     print("\nProcessing complete. Shutting down!")
 
 if __name__ == "__main__":
