@@ -45,3 +45,6 @@ Because Google does not have an official API, this tool uses browser automation.
 ### Step 2: Create a Telegram Bot
 1. Checkout a youtube tutorial: https://www.youtube.com/watch?v=UQrcOj63S2o. You should get the TELEGRAM_BOT_TOKEN.
 2. You can go the bot you have created and enter /start. It will return you the TELEGRAM_CHAT_ID add that to the secrets.
+
+## Caveats
+1. We need to keep updating the NOTEBOOKLM_SESSION token every time google wipes out the cookies.
