@@ -4,6 +4,7 @@ import json
 import datetime
 import arxiv
 import requests
+import cloudscraper
 import telebot
 import asyncio
 from notebooklm import NotebookLMClient
@@ -56,13 +57,13 @@ async def build_podcast(paper):
                 final_url = paper.pdf_url if paper.pdf_url.endswith('.pdf') else f"{paper.pdf_url}.pdf"
                 await client.sources.add_url(nb.id, final_url, wait=True)
             else:
-                headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "application/pdf,application/xhtml+xml,text/html,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Referer": "https://scholar.google.com/"
-                }
-                pdf_response = requests.get(paper.pdf_url, headers=headers, stream=True)
+                scraper = cloudscraper.create_scraper(browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True
+                })
+            
+                pdf_response = scraper.get(paper.pdf_url, stream=True)
                 pdf_response.raise_for_status()
                 
                 local_filename = f"temp_{int(time.time())}.pdf"

@@ -2,3 +2,4 @@ arxiv
 requests
 pyTelegramBotAPI
 notebooklm-py[browser]
+cloudscraper
