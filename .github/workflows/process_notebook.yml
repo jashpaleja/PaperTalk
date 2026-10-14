@@ -25,7 +25,7 @@ jobs:
       # 1. Install ONLY the lightweight packages needed to check Telegram
       - name: Install base dependencies
         run: |
-          pip install arxiv requests pyTelegramBotAPI
+          pip install arxiv requests pyTelegramBotAPI cloudscraper
           
       # 2. Peek at the Telegram queue to see if an approval, PDF, or Link is waiting
       - name: Check Telegram Queue
@@ -61,7 +61,7 @@ jobs:
         if: steps.check_queue.outputs.has_approval == 'true'
         run: |
           pip install "notebooklm-py[browser]"
-          python -m playwright install chromium cloudscraper
+          python -m playwright install chromium 
 
       # 4. ONLY restore the Google session if an approval was found
       - name: Restore NotebookLM Session
