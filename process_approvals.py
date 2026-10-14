@@ -106,9 +106,14 @@ async def build_podcast(paper):
             return "success"
             
     except Exception as e:
-        bot.send_message(CHAT_ID, f"❌ NotebookLM Error: {str(e)}")
-        return "error"
-
+        error_str = str(e)
+        if "403" in error_str:
+            bot.send_message(CHAT_ID, f"🚫 The publisher's firewall permanently blocked the automated download for '{paper.title}'.\n\nPlease download the PDF manually and send it directly to this chat!")
+            return "error"
+        else:
+            bot.send_message(CHAT_ID, f"❌ NotebookLM Error: {error_str}")
+            return "error"
+        
 def process_queue():
     db = load_db()
     today_str = str(datetime.date.today())
