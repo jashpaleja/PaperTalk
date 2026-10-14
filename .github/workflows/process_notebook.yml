@@ -61,7 +61,7 @@ jobs:
         if: steps.check_queue.outputs.has_approval == 'true'
         run: |
           pip install "notebooklm-py[browser]"
-          python -m playwright install chromium
+          python -m playwright install chromium cloudscraper
 
       # 4. ONLY restore the Google session if an approval was found
       - name: Restore NotebookLM Session
